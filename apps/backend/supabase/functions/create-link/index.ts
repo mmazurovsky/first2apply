@@ -25,12 +25,13 @@ Deno.serve(async (req) => {
     });
     const { user, supabaseClient } = context;
 
-    const { title, url, html, webPageRuntimeData, force } = (await req.json()) as {
+    const { title, url, html, webPageRuntimeData, force, ai_prompt_addition } = (await req.json()) as {
       title: string;
       url: string;
       html?: string;
       webPageRuntimeData?: WebPageRuntimeData;
       force?: boolean;
+      ai_prompt_addition?: string;
     };
     logger.info(`Creating link: ${title} - ${url}`);
 
@@ -90,6 +91,7 @@ Deno.serve(async (req) => {
         url: cleanUrl,
         title,
         site_id: site.id,
+        ai_prompt_addition: ai_prompt_addition ?? '',
       })
       .select('*');
     if (error) throw error;

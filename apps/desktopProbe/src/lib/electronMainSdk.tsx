@@ -96,12 +96,14 @@ export async function createLink({
   html,
   webPageRuntimeData,
   force,
+  ai_prompt_addition,
 }: {
   title: string;
   url: string;
   html: string;
   webPageRuntimeData: WebPageRuntimeData;
   force: boolean;
+  ai_prompt_addition?: string;
 }): Promise<Link> {
   const { link } = await _mainProcessApiCall<{ link: Link }>('create-link', {
     title,
@@ -109,6 +111,7 @@ export async function createLink({
     html,
     webPageRuntimeData,
     force,
+    ai_prompt_addition,
   });
   return link;
 }
@@ -120,15 +123,18 @@ export async function updateLink({
   linkId,
   title,
   url,
+  ai_prompt_addition,
 }: {
   linkId: number;
   title: string;
   url: string;
+  ai_prompt_addition?: string;
 }): Promise<Link> {
   const link = await _mainProcessApiCall<Link>('update-link', {
     linkId,
     title,
     url,
+    ai_prompt_addition,
   });
   return link;
 }
@@ -234,6 +240,14 @@ export async function openExternalUrl(url: string): Promise<void> {
 }
 
 /**
+ * Open a url in Google Chrome (new tab in existing instance, or new instance).
+ * Falls back to the default browser if Chrome cannot be launched.
+ */
+export async function openInChrome(url: string): Promise<void> {
+  await _mainProcessApiCall('open-in-chrome', { url });
+}
+
+/**
  * Scan a job to fetch the details.
  */
 export async function scanJob(job: Job): Promise<Job> {
@@ -313,6 +327,18 @@ export async function exportJobsToCsv(status: JobStatus): Promise<void> {
  */
 export async function changeAllJobsStatus({ from, to }: { from: JobStatus; to: JobStatus }): Promise<void> {
   await _mainProcessApiCall('change-all-job-status', { from, to });
+}
+
+/**
+ * Re-run advanced matching against all jobs currently in "new" status,
+ * or only the provided jobIds when set.
+ */
+export async function rerunAdvancedMatching(args?: {
+  jobIds?: number[];
+}): Promise<{ processed: number; excluded: number }> {
+  return await _mainProcessApiCall<{ processed: number; excluded: number }>('rerun-advanced-matching', {
+    jobIds: args?.jobIds,
+  });
 }
 
 /**
@@ -507,6 +533,7 @@ export class ElectronApiSdk implements First2ApplyApiSdk {
   updateJobLabels = updateJobLabels;
   exportJobsToCsv = exportJobsToCsv;
   changeAllJobsStatus = changeAllJobsStatus;
+  rerunAdvancedMatching = rerunAdvancedMatching;
   scanJob = scanJob;
 
   // Links

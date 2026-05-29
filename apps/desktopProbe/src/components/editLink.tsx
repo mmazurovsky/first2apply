@@ -6,6 +6,7 @@ import { Button } from '@first2apply/ui';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@first2apply/ui';
 import { Form, FormControl, FormField, FormItem, FormLabel } from '@first2apply/ui';
 import { Input } from '@first2apply/ui';
+import { Textarea } from '@first2apply/ui';
 import { useForm } from '@first2apply/ui';
 import { useToast } from '@first2apply/ui';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,7 +25,7 @@ export function EditLink({
 }: {
   isOpen: boolean;
   link: Link;
-  onUpdateLink: (data: { linkId: number; title: string }) => Promise<void>;
+  onUpdateLink: (data: { linkId: number; title: string; ai_prompt_addition: string }) => Promise<void>;
   onCancel: () => void;
 }) {
   if (!isOpen) {
@@ -38,6 +39,7 @@ export function EditLink({
   const formSchema = z.object({
     title: z.string().min(1, 'Title is required'),
     url: z.string().url('Invalid URL').min(1, 'URL is required'),
+    ai_prompt_addition: z.string().optional().default(''),
   });
 
   const form = useForm({
@@ -45,15 +47,17 @@ export function EditLink({
     defaultValues: {
       title: link.title,
       url: link.url,
+      ai_prompt_addition: link.ai_prompt_addition ?? '',
     },
   });
 
-  const onSubmit = async (data: { title: string }) => {
+  const onSubmit = async (data: { title: string; ai_prompt_addition?: string }) => {
     setIsSubmitting(true);
     try {
       await onUpdateLink({
         linkId: link.id,
         title: data.title,
+        ai_prompt_addition: data.ai_prompt_addition ?? '',
       });
       toast({
         title: 'Job search updated',
@@ -117,6 +121,25 @@ export function EditLink({
                     <FormLabel>URL</FormLabel>
                     <FormControl>
                       <Input id="url" type="url" disabled={true} {...field} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {/* Per-link AI prompt addition */}
+              <FormField
+                control={form.control}
+                name="ai_prompt_addition"
+                render={({ field }) => (
+                  <FormItem className="w-full">
+                    <FormLabel>Additional AI filter for this search (optional)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        id="ai_prompt_addition"
+                        placeholder="e.g. Only include jobs that mention Java as the main programming language."
+                        rows={4}
+                        {...field}
+                      />
                     </FormControl>
                   </FormItem>
                 )}

@@ -22,6 +22,7 @@ import { Badge } from '@first2apply/ui';
 import { Button } from '@first2apply/ui';
 import { Form, FormControl, FormField, FormItem, FormLabel } from '@first2apply/ui';
 import { Input } from '@first2apply/ui';
+import { Textarea } from '@first2apply/ui';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
@@ -89,7 +90,15 @@ export function CreateLink() {
     }
   };
 
-  const onSaveSearch = async ({ title, force }: { title: string; force: boolean }) => {
+  const onSaveSearch = async ({
+    title,
+    force,
+    ai_prompt_addition,
+  }: {
+    title: string;
+    force: boolean;
+    ai_prompt_addition: string;
+  }) => {
     if (!jobBoardModalResponse) {
       handleError({ error: new Error('No job search data'), title: 'Error saving job search' });
       return;
@@ -101,6 +110,7 @@ export function CreateLink() {
       html: jobBoardModalResponse.html,
       webPageRuntimeData: jobBoardModalResponse.webPageRuntimeData,
       force,
+      ai_prompt_addition,
     });
     toast({
       title: 'Link created',
@@ -195,7 +205,7 @@ const JobSearchSubmitDialog = ({
   title: string;
   url: string;
   isOpen: boolean;
-  onSaveJobSearch: (data: { title: string; force: boolean }) => Promise<Link>;
+  onSaveJobSearch: (data: { title: string; force: boolean; ai_prompt_addition: string }) => Promise<Link>;
   onCancel: () => void;
 }) => {
   if (!isOpen) {
@@ -209,6 +219,7 @@ const JobSearchSubmitDialog = ({
   const formSchema = z.object({
     title: z.string().min(1, 'Title is required'),
     url: z.string().url('Invalid URL').min(1, 'URL is required'),
+    ai_prompt_addition: z.string().optional().default(''),
   });
 
   const form = useForm({
@@ -216,13 +227,18 @@ const JobSearchSubmitDialog = ({
     defaultValues: {
       title,
       url,
+      ai_prompt_addition: '',
     },
   });
 
-  const onSubmit = async (data: { title: string }) => {
+  const onSubmit = async (data: { title: string; ai_prompt_addition?: string }) => {
     setIsSubmitting(true);
     try {
-      await onSaveJobSearch({ title: data.title, force: !!errorMessage });
+      await onSaveJobSearch({
+        title: data.title,
+        force: !!errorMessage,
+        ai_prompt_addition: data.ai_prompt_addition ?? '',
+      });
       toast({
         title: 'Job search created',
         description: `Job search ${data.title} created successfully`,
@@ -290,6 +306,25 @@ const JobSearchSubmitDialog = ({
                     <FormLabel>URL</FormLabel>
                     <FormControl>
                       <Input id="url" type="url" disabled={true} {...field} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {/* Per-link AI prompt addition */}
+              <FormField
+                control={form.control}
+                name="ai_prompt_addition"
+                render={({ field }) => (
+                  <FormItem className="w-full">
+                    <FormLabel>Additional AI filter for this search (optional)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        id="ai_prompt_addition"
+                        placeholder="e.g. Only include jobs that mention Java as the main programming language."
+                        rows={4}
+                        {...field}
+                      />
                     </FormControl>
                   </FormItem>
                 )}

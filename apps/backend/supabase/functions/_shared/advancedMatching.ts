@@ -1,10 +1,10 @@
 import { AdvancedMatchingConfig, DbSchema, Job, JobStatus, throwError } from '@first2apply/core';
 import { SupabaseClient } from '@supabase/supabasefork';
-import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 
 import { ILogger } from './logger.ts';
 import { buildOpenAiClient, logAiUsage } from './openAI.ts';
+import { extractAndSaveSkillsNote } from './skillsExtraction.ts';
 import { checkUserSubscription } from './subscription.ts';
 
 /**
@@ -60,8 +60,22 @@ export async function applyAdvancedMatchingFilters({
   if (job.description && advancedMatching.chatgpt_prompt) {
     logger.info('prompting OpenAI to determine if the job should be excluded ...');
 
+    // load the per-link AI prompt addition (if any) to append to the global prompt
+    let linkAddition = '';
+    if (job.link_id) {
+      const { data: link } = await supabaseClient
+        .from('links')
+        .select('ai_prompt_addition')
+        .eq('id', job.link_id)
+        .maybeSingle();
+      linkAddition = link?.ai_prompt_addition?.trim() ?? '';
+    }
+    const fullPrompt = linkAddition
+      ? `${advancedMatching.chatgpt_prompt}\n\nAdditional rules for this specific search:\n${linkAddition}`
+      : advancedMatching.chatgpt_prompt;
+
     const { exclusionDecision } = await promptOpenAI({
-      prompt: advancedMatching.chatgpt_prompt,
+      prompt: fullPrompt,
       job,
       logger,
       supabaseAdminClient,
@@ -74,6 +88,9 @@ export async function applyAdvancedMatchingFilters({
         excludeReason: exclusionDecision.reason ?? undefined,
       };
     }
+
+    // job passed the LLM filter — enrich it with a skills note (best-effort)
+    await extractAndSaveSkillsNote({ logger, supabaseAdminClient, job });
   }
 
   logger.info('job passed all advanced matching filters');
@@ -111,9 +128,7 @@ async function promptOpenAI({
   logger: ILogger;
   supabaseAdminClient: SupabaseClient<DbSchema, 'public'>;
 }) {
-  const { llmConfig, openAi } = buildOpenAiClient({
-    modelName: 'gpt-5.5',
-  });
+  const { llmConfig, openAi } = buildOpenAiClient();
 
   const response = await openAi.chat.completions.create({
     model: llmConfig.model,
@@ -131,7 +146,7 @@ async function promptOpenAI({
       },
     ],
     max_completion_tokens: 3000,
-    response_format: zodResponseFormat(JobExclusionFormat, 'JobExclusion'),
+    response_format: { type: 'json_object' },
   });
 
   const choice = response.choices[0];

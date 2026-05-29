@@ -107,12 +107,14 @@ export class F2aSupabaseApi {
     html,
     webPageRuntimeData,
     force,
+    ai_prompt_addition,
   }: {
     title: string
     url: string
     html: string
     webPageRuntimeData: WebPageRuntimeData
     force: boolean
+    ai_prompt_addition?: string
   }) {
     // for debugging, use a test.html file
     // const htmlFixture = fs.readFileSync(path.join(__dirname, '../../../test.html'), 'utf-8');
@@ -128,6 +130,7 @@ export class F2aSupabaseApi {
             html,
             webPageRuntimeData,
             force,
+            ai_prompt_addition,
           },
         }
       )
@@ -143,15 +146,17 @@ export class F2aSupabaseApi {
     linkId,
     title,
     url,
+    ai_prompt_addition,
   }: {
     linkId: number
     title: string
     url: string
+    ai_prompt_addition?: string
   }): Promise<Link> {
     const updatedLink = await this._supabaseApiCall(async () =>
       this._supabase
         .from("links")
-        .update({ title, url })
+        .update({ title, url, ai_prompt_addition })
         .eq("id", linkId)
         .select("*")
         .single()
@@ -383,6 +388,21 @@ export class F2aSupabaseApi {
       this._supabase.from("jobs").select("*").eq("id", jobId)
     )
     return job
+  }
+
+  /**
+   * Re-run advanced matching against all jobs currently in "new" status,
+   * or only the provided jobIds when set.
+   */
+  async rerunAdvancedMatching(args?: {
+    jobIds?: number[]
+  }): Promise<{ processed: number; excluded: number }> {
+    return this._supabaseApiCall(() =>
+      this._supabase.functions.invoke<{ processed: number; excluded: number }>(
+        "rerun-advanced-matching",
+        { body: { jobIds: args?.jobIds } }
+      )
+    )
   }
 
   /**

@@ -2,7 +2,6 @@ import { Job, throwError } from '@first2apply/core';
 import { DbSchema, User } from '@first2apply/core';
 import { SupabaseClient } from '@supabase/supabasefork';
 import { DOMParser, Element } from 'deno-dom-wasm';
-import { zodResponseFormat } from 'openai/helpers/zod';
 import turndown from 'turndown';
 import { z } from 'zod';
 
@@ -34,10 +33,7 @@ export async function parseCustomJobs({
 }): Promise<JobSiteParseResult> {
   const { logger } = context;
 
-  const { openAi, llmConfig } = buildOpenAiClient({
-    modelName: 'gpt-5.5',
-    ...context,
-  });
+  const { openAi, llmConfig } = buildOpenAiClient();
 
   // helper methods
   const generateUserPrompt = () => {
@@ -98,7 +94,7 @@ ${htmlContent}
       },
     ],
     max_completion_tokens: 50_000,
-    response_format: zodResponseFormat(PARSE_JOBS_PAGE_SCHEMA, 'ParseJobsPageResponse'),
+    response_format: { type: 'json_object' },
   });
 
   const choice = response.choices[0];
@@ -256,10 +252,7 @@ ${withAdvancedMatchingPreferences}
   };
 
   const { userPrompt, htmlContent } = generateUserPrompt();
-  const { openAi, llmConfig } = buildOpenAiClient({
-    modelName: 'gpt-5-mini',
-    ...context,
-  });
+  const { openAi, llmConfig } = buildOpenAiClient();
 
   const response = await openAi.chat.completions.create({
     model: llmConfig.model,
@@ -274,7 +267,7 @@ ${withAdvancedMatchingPreferences}
       },
     ],
     max_completion_tokens: 10_000,
-    response_format: zodResponseFormat(PARSE_JOB_DESCRIPTION_SCHEMA, 'ParseJobDescriptionResponse'),
+    response_format: { type: 'json_object' },
   });
 
   const choice = response.choices[0];

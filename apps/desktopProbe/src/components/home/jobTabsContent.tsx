@@ -9,14 +9,28 @@ import { useSettings } from '@/hooks/settings';
 import {
   getJobById,
   listJobs,
-  openExternalUrl,
+  openInChrome,
+  rerunAdvancedMatching,
   scanJob,
   updateJobLabels,
   updateJobStatus,
 } from '@/lib/electronMainSdk';
 import { Job, JobLabel, JobStatus } from '@first2apply/core';
-import { JobSummary, TabsContent } from '@first2apply/ui';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+  JobSummary,
+  TabsContent,
+} from '@first2apply/ui';
 import { toast } from '@first2apply/ui';
+import { ReloadIcon } from '@radix-ui/react-icons';
 
 import { BrowserWindow, BrowserWindowHandle } from '../browserWindow';
 import { JobDetails } from './jobDetails';
@@ -63,6 +77,110 @@ export function JobTabsContent({
 
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const selectedJob = listing.jobs.find((job) => job.id === selectedJobId);
+
+  const [isRerunDialogOpen, setIsRerunDialogOpen] = useState(false);
+  const [isRerunning, setIsRerunning] = useState(false);
+
+  const onRerunAdvancedMatching = async () => {
+    setIsRerunDialogOpen(false);
+    setIsRerunning(true);
+
+    const RERUN_CHUNK_SIZE = 5;
+    const MAX_ATTEMPTS = 3;
+    const BASE_DELAY_MS = 800;
+    const PERSISTENT_TOAST_DURATION = 1000 * 60 * 60 * 24;
+
+    const progressToast = toast({
+      title: 'Re-running AI filter…',
+      description: 'Loading jobs…',
+      duration: PERSISTENT_TOAST_DURATION,
+    });
+
+    try {
+      // Page through all "new" jobs to build the work queue (id + title).
+      const queue: { id: number; title: string }[] = [];
+      let after: string | undefined = undefined;
+      while (true) {
+        const page: { jobs: Job[]; nextPageToken?: string } = await listJobs({
+          status: 'new',
+          limit: JOB_BATCH_SIZE,
+          after,
+        });
+        for (const j of page.jobs) queue.push({ id: j.id, title: j.title ?? `Job #${j.id}` });
+        if (!page.nextPageToken || page.jobs.length < JOB_BATCH_SIZE) break;
+        after = page.nextPageToken;
+      }
+
+      const total = queue.length;
+      if (total === 0) {
+        progressToast.dismiss();
+        toast({
+          title: 'AI filter re-run complete',
+          description: 'No new jobs to process.',
+          variant: 'success',
+        });
+        return;
+      }
+
+      let processed = 0;
+      let excluded = 0;
+      let failed = 0;
+
+      for (let i = 0; i < queue.length; i += RERUN_CHUNK_SIZE) {
+        const chunk = queue.slice(i, i + RERUN_CHUNK_SIZE);
+        const currentTitle = chunk[0]?.title ?? '';
+
+        progressToast.update({
+          id: progressToast.id,
+          title: 'Re-running AI filter…',
+          description: `Processed ${processed}/${total} · Now: ${currentTitle}`,
+          duration: PERSISTENT_TOAST_DURATION,
+        });
+
+        let attempt = 0;
+        let chunkOk = false;
+        let lastError: unknown = null;
+        while (attempt < MAX_ATTEMPTS && !chunkOk) {
+          try {
+            const res = await rerunAdvancedMatching({ jobIds: chunk.map((c) => c.id) });
+            if (!res || typeof res.processed !== 'number' || typeof res.excluded !== 'number') {
+              throw new Error('Invalid response from rerun-advanced-matching');
+            }
+            processed += res.processed;
+            excluded += res.excluded;
+            chunkOk = true;
+          } catch (err) {
+            lastError = err;
+            attempt += 1;
+            if (attempt < MAX_ATTEMPTS) {
+              const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1) * (0.5 + Math.random());
+              await new Promise((r) => setTimeout(r, delay));
+            }
+          }
+        }
+        if (!chunkOk) {
+          failed += chunk.length;
+          console.error('rerun-advanced-matching chunk failed after retries', {
+            jobIds: chunk.map((c) => c.id),
+            error: lastError,
+          });
+        }
+      }
+
+      progressToast.dismiss();
+      toast({
+        title: 'AI filter re-run complete',
+        description: `Processed ${processed} · Excluded ${excluded}${failed > 0 ? ` · Failed ${failed}` : ''}.`,
+        variant: failed > 0 ? 'destructive' : 'success',
+      });
+      navigate(`?status=${status}&r=${Math.random()}`);
+    } catch (error) {
+      progressToast.dismiss();
+      handleError({ error, title: 'Failed to re-run AI filter' });
+    } finally {
+      setIsRerunning(false);
+    }
+  };
 
   const statusIndex = ALL_JOB_STATUSES.indexOf(status);
 
@@ -271,13 +389,9 @@ export function JobTabsContent({
     }
   };
 
-  // Open a job in the default browser
+  // Open a job in Google Chrome (new tab in existing instance, or new instance)
   const onViewJob = (job: Job) => {
-    if (settings.inAppBrowserEnabled) {
-      browserWindowRef.current?.open(job.externalUrl);
-    } else {
-      openExternalUrl(job.externalUrl);
-    }
+    openInChrome(job.externalUrl);
   };
   const onOpenUrl = (url: string) => {
     browserWindowRefOther.current?.open(url);
@@ -332,6 +446,19 @@ export function JobTabsContent({
                     labels={labels}
                     onSearchJobs={onSearchJobs}
                   />
+                  {statusItem === 'new' && listing.new > 0 && (
+                    <div className="flex justify-end px-2 pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isRerunning}
+                        onClick={() => setIsRerunDialogOpen(true)}
+                      >
+                        <ReloadIcon className={`mr-2 h-3.5 w-3.5 ${isRerunning ? 'animate-spin' : ''}`} />
+                        {isRerunning ? 'Re-running AI filter…' : 'Re-run AI filter'}
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {listing.isLoading || statusItem !== status ? (
@@ -633,6 +760,24 @@ export function JobTabsContent({
           tooltip: 'Done browsing',
         }}
       ></BrowserWindow>
+
+      <AlertDialog open={isRerunDialogOpen} onOpenChange={setIsRerunDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-run AI filter on new jobs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will re-evaluate every job in the "New" tab ({listing.new}{' '}
+              {listing.new === 1 ? 'job' : 'jobs'}) against your global AI prompt plus each search's per-link prompt.
+              Jobs that no longer pass will be moved to the "Filtered" tab. This calls OpenAI for each job and may take
+              a minute.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onRerunAdvancedMatching}>Re-run</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

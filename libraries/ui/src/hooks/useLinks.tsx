@@ -16,11 +16,12 @@ type LinksContextType = {
       html: string
       webPageRuntimeData: WebPageRuntimeData
       force: boolean
+      ai_prompt_addition?: string
     }
   ) => Promise<Link>
   updateLink: (
     linkId: number,
-    data: { title: string; url: string }
+    data: { title: string; url: string; ai_prompt_addition?: string }
   ) => Promise<void>
   removeLink: (linkId: number) => Promise<void>
   reloadLinks: () => Promise<void>
@@ -88,6 +89,7 @@ export const LinksProvider = ({
       html: string
       webPageRuntimeData: WebPageRuntimeData
       force: boolean
+      ai_prompt_addition?: string
     }
   ) => {
     const createdLink = await sdk.createLink(newLink)
@@ -98,12 +100,13 @@ export const LinksProvider = ({
   // Update an existing link
   const onUpdateLink = async (
     linkId: number,
-    data: { title: string; url: string }
+    data: { title: string; url: string; ai_prompt_addition?: string }
   ) => {
     const updatedLink = await sdk.updateLink({
       linkId,
       title: data.title,
       url: data.url,
+      ai_prompt_addition: data.ai_prompt_addition,
     })
     setLinks((currentLinks) =>
       currentLinks.map((link) =>

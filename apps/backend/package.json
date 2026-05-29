@@ -7,6 +7,7 @@
     "build": "cd supabase/functions && deno check **/*.ts",
     "stop": "npx supabase stop",
     "start": "npx supabase start",
+    "db:bootstrap": "bash scripts/db-bootstrap.sh",
     "dev:local": "npx supabase functions serve",
     "prettier": "npx prettier --check \"supabase/functions/**/*.ts\""
   },

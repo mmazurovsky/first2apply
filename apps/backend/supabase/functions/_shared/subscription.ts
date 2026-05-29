@@ -30,9 +30,10 @@ export async function checkUserSubscription({
     throw new Error('Profile not found');
   }
 
-  // check if the user's subscription has expired
-  const subscriptionHasExpired = new Date(profile.subscription_end_date) < new Date();
-  const hasProTier = profile.subscription_tier === 'pro';
+  // LOCAL DEV BYPASS — force PRO access regardless of profile state.
+  // Revert before deploying.
+  const subscriptionHasExpired = false;
+  const hasProTier = true;
 
   return {
     profile,

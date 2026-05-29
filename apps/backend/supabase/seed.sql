@@ -24,6 +24,7 @@ public.links (
   scrape_failure_count integer not null default 0,
   last_scraped_at timestamp with time zone not null default (now() at time zone 'utc'::text),
   scrape_failure_email_sent boolean not null default false,
+  ai_prompt_addition text not null default ''::text,
   constraint links_pkey primary key (id),
   constraint links_site_id_fkey foreign key (site_id) references sites (id) on update restrict on delete restrict,
   constraint links_user_id_fkey foreign key (user_id) references auth.users (id) on delete restrict
@@ -253,7 +254,15 @@ create trigger on_auth_user_created
 -- select id from auth.users
 -- where id not in (select user_id from public.profiles);
 
--- Stripe DB wrappers
+-- Stripe DB wrappers (opt-in; disabled by default).
+-- The vault.secrets insert below requires pgsodium privileges that the
+-- local seed runner lacks, which aborts `supabase db reset`. The Stripe
+-- FDW is not used at runtime (Stripe webhook handler uses the Node SDK),
+-- so the block is wrapped in a /* */ block comment. Remove the comment
+-- markers if you need the FDW locally. (psql \if metacommands are not
+-- supported by `supabase db reset`'s batch protocol — block comment is
+-- the portable gate.)
+/*
 create extension if not exists wrappers with schema extensions;
 create foreign data wrapper stripe_wrapper
   handler stripe_fdw_handler
@@ -270,7 +279,7 @@ create server stripe_server
   foreign data wrapper stripe_wrapper
   options (
     api_key_id 'stripe_secret_key',
-    api_url 'https://api.stripe.com/v1/'  -- Stripe API base URL, optional. Default is 'https://api.stripe.com/v1/'
+    api_url 'https://api.stripe.com/v1/'
   );
 
 create schema stripe;
@@ -287,7 +296,7 @@ create foreign table stripe.customers (
     object 'customers',
     rowid_column 'id'
   );
-  
+
 create foreign table stripe.subscriptions (
   id text,
   customer text,
@@ -301,6 +310,7 @@ create foreign table stripe.subscriptions (
     object 'subscriptions',
     rowid_column 'id'
   );
+*/
 
 -- advanced matching
 create table

@@ -10,6 +10,7 @@
     "gitCommitMessage": "npx commitlint",
     "gitPrePush": "pnpm run typecheck",
     "dev": "npx nx run-many -t dev",
+    "dev:desktop": "./scripts/dev-desktop.sh",
     "build": "npx nx run-many -t build",
     "typecheck": "npx nx run-many -t typecheck",
     "test": "npx nx run-many -t test",

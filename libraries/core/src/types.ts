@@ -61,6 +61,7 @@ export type Link = {
   scrape_failure_count: number;
   last_scraped_at: string;
   scrape_failure_email_sent: boolean;
+  ai_prompt_addition: string;
 };
 
 export type JobType = 'remote' | 'hybrid' | 'onsite';
@@ -177,13 +178,14 @@ export type DbSchema = {
       };
       links: {
         Row: Link;
-        Insert: Pick<Link, 'url' | 'title' | 'site_id'>;
+        Insert: Pick<Link, 'url' | 'title' | 'site_id'> & { ai_prompt_addition?: string };
         Update: {
           title?: string;
           url?: string;
           scrape_failure_count?: number;
           last_scraped_at?: Date;
           scrape_failure_email_sent?: boolean;
+          ai_prompt_addition?: string;
         };
         Relationships: [];
       };
@@ -230,7 +232,7 @@ export type DbSchema = {
       };
       notes: {
         Row: Note;
-        Insert: Pick<Note, 'job_id' | 'text' | 'files'>;
+        Insert: Pick<Note, 'job_id' | 'text' | 'files'> & Partial<Pick<Note, 'user_id'>>;
         Update: Partial<Pick<Note, 'text' | 'files'>>;
         Relationships: [];
       };

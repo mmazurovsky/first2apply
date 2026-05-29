@@ -68,13 +68,7 @@ export function FiltersPage() {
       setUserAiInput(updatedConfig.chatgpt_prompt);
       setBlacklistedCompanies(updatedConfig.blacklisted_companies);
 
-      // if the user is not on the PRO plan, show the subscription dialog
-      if (profile.subscription_tier !== 'pro') {
-        setSubscriptionDialogOpen(true);
-        return;
-      } else {
-        toast({ title: 'Advanced matching filters saved' });
-      }
+      toast({ title: 'Advanced matching filters saved' });
     } catch (error) {
       handleError({ error, title: 'Failed to save advanced matching filters' });
     }

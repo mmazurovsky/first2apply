@@ -2,7 +2,7 @@ import { parseEnv } from './env.ts';
 
 import { getExceptionMessage } from '@first2apply/core';
 import { SupabaseClient } from '@supabase/supabasefork';
-import { AzureOpenAI } from 'openai';
+import OpenAI from 'openai';
 
 import { ILogger } from './logger.ts';
 
@@ -16,43 +16,32 @@ type OpenAIResponse = {
 
 const env = parseEnv();
 
-// o3* classes seems to have been superseded by gpt-5* models.
-const SUPPORTED_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5-mini'] as const;
+const SUPPORTED_MODELS = ['deepseek/deepseek-v4-flash'] as const;
 type SupportedModel = (typeof SUPPORTED_MODELS)[number];
 
+// TODO: confirm OpenRouter pricing for deepseek-v4-flash before relying on cost figures.
 const COST_PER_MODEL: Record<SupportedModel, { input: number; output: number }> = {
-  'gpt-5.5': { input: 5, output: 30 },
-  'gpt-5.4': { input: 2.5, output: 15 },
-  // 'gpt-5.2': { input: 1.75, output: 14 },
-  'gpt-5-mini': { input: 0.25, output: 2 },
-  // 'gpt-5-nano': { input: 0.05, output: 0.4 },
-  // 'gpt-4o': { input: 2.5, output: 10 },
-  // 'gpt-4o-mini': { input: 0.15, output: 0.6 },
-  // 'o4-mini': { input: 1.1, output: 4.4 },
-  // o3: { input: 2.0, output: 8.0 },
-  // 'o3-mini': { input: 1.1, output: 4.4 },
+  'deepseek/deepseek-v4-flash': { input: 0.27, output: 1.1 },
 };
 
-export type AzureFoundryConfig = {
-  apiEndpoint: string;
+export type OpenRouterConfig = {
   apiKey: string;
 };
 
 /**
- * Build a new Azure OpenAI client.
+ * Build a new OpenRouter client (OpenAI-compatible).
  */
-export function buildOpenAiClient({ modelName }: { modelName?: SupportedModel }) {
-  const openAi = new AzureOpenAI({
-    apiKey: env.azureFoundryConfig.apiKey,
-    endpoint: env.azureFoundryConfig.apiEndpoint,
-    apiVersion: '2025-04-01-preview',
+export function buildOpenAiClient({ modelName }: { modelName?: SupportedModel } = {}) {
+  const openAi = new OpenAI({
+    apiKey: env.openRouterConfig.apiKey,
+    baseURL: 'https://openrouter.ai/api/v1',
   });
 
-  const model = modelName ?? 'gpt-5.4';
+  const model = modelName ?? 'deepseek/deepseek-v4-flash';
   if (!(model in COST_PER_MODEL)) {
     throw new Error(`Unsupported model: ${model}`);
   }
-  console.log(`Using model ${model} for Azure OpenAI calls.`);
+  console.log(`Using model ${model} for OpenRouter calls.`);
   const { input, output } = COST_PER_MODEL[model];
   const llmConfig = {
     model,

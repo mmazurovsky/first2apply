@@ -1,10 +1,60 @@
 import { getExceptionMessage } from '@first2apply/core';
 import { Job } from '@first2apply/core';
 import { F2aSupabaseApi } from '@first2apply/ui';
+import { execFile, spawn } from 'child_process';
 import { dialog, ipcMain, shell } from 'electron';
 import fs from 'fs';
 import { json2csv } from 'json-2-csv';
 import os from 'os';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+
+async function _openInChrome(url: string): Promise<void> {
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error(`Refusing to open non-http(s) URL: ${url}`);
+  }
+
+  const platform = process.platform;
+
+  try {
+    if (platform === 'darwin') {
+      await execFileAsync('open', ['-a', 'Google Chrome', url]);
+      return;
+    }
+
+    if (platform === 'win32') {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn('cmd', ['/c', 'start', '""', 'chrome', url], {
+          detached: true,
+          stdio: 'ignore',
+        });
+        child.once('error', reject);
+        child.once('spawn', () => {
+          child.unref();
+          resolve();
+        });
+      });
+      return;
+    }
+
+    // linux / other unix
+    const candidates = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
+    let lastError: unknown;
+    for (const bin of candidates) {
+      try {
+        await execFileAsync(bin, [url]);
+        return;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError ?? new Error('No Chrome/Chromium binary found on PATH');
+  } catch (err) {
+    console.warn(`Failed to launch Chrome (${getExceptionMessage(err)}), falling back to default browser`);
+    await shell.openExternal(url);
+  }
+}
 
 import { IAnalyticsClient } from '../lib/analytics';
 import { F2aAutoUpdater } from './autoUpdater';
@@ -77,7 +127,7 @@ export function initRendererIpcApi({
 
   ipcMain.handle('get-user', async () => _apiCall(() => supabaseApi.getUser()));
 
-  ipcMain.handle('create-link', async (_, { title, url, html, webPageRuntimeData, force }) =>
+  ipcMain.handle('create-link', async (_, { title, url, html, webPageRuntimeData, force, ai_prompt_addition }) =>
     _apiCall(async () => {
       const { link, newJobs } = await supabaseApi.createLink({
         title,
@@ -85,6 +135,7 @@ export function initRendererIpcApi({
         html,
         webPageRuntimeData,
         force,
+        ai_prompt_addition,
       });
 
       // intentionally not awaited to not have the user wait until JDs are in
@@ -98,8 +149,8 @@ export function initRendererIpcApi({
     }),
   );
 
-  ipcMain.handle('update-link', async (event, { linkId, title, url }) => {
-    const res = await _apiCall(() => supabaseApi.updateLink({ linkId, title, url }));
+  ipcMain.handle('update-link', async (event, { linkId, title, url, ai_prompt_addition }) => {
+    const res = await _apiCall(() => supabaseApi.updateLink({ linkId, title, url, ai_prompt_addition }));
     analytics.trackEvent('link_updated', { link_id: linkId });
     return res;
   });
@@ -140,6 +191,8 @@ export function initRendererIpcApi({
   ipcMain.handle('get-job-scanner-settings', async () => _apiCall(async () => jobScanner.getSettings()));
 
   ipcMain.handle('open-external-url', async (event, { url }) => _apiCall(async () => shell.openExternal(url)));
+
+  ipcMain.handle('open-in-chrome', async (event, { url }) => _apiCall(async () => _openInChrome(url)));
 
   ipcMain.handle('scan-job-description', async (event, { job }) =>
     _apiCall(async () => {
@@ -226,6 +279,16 @@ export function initRendererIpcApi({
       return { job };
     }),
   );
+
+  ipcMain.handle('rerun-advanced-matching', async (_evt, args: { jobIds?: number[] } = {}) => {
+    const res = await _apiCall(() => supabaseApi.rerunAdvancedMatching({ jobIds: args?.jobIds }));
+    analytics.trackEvent('rerun_advanced_matching', {
+      processed: res.data?.processed,
+      excluded: res.data?.excluded,
+      chunkSize: args?.jobIds?.length,
+    });
+    return res;
+  });
 
   ipcMain.handle('get-profile', async () =>
     _apiCall(async () => {

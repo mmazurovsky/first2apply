@@ -91,6 +91,9 @@ export class WebappApiSdk implements First2ApplyApiSdk {
   async changeAllJobsStatus(_: { from: JobStatus; to: JobStatus }): Promise<void> {
     return throwError('changeAllJobsStatus not implemented');
   }
+  async rerunAdvancedMatching(_?: { jobIds?: number[] }): Promise<{ processed: number; excluded: number }> {
+    return throwError('rerunAdvancedMatching not implemented');
+  }
   async scanJob(job: Job): Promise<Job> {
     return throwError('scanJob not implemented');
   }
@@ -99,10 +102,10 @@ export class WebappApiSdk implements First2ApplyApiSdk {
   async listLinks(): Promise<Link[]> {
     return listLinks();
   }
-  async createLink(_: { title: string; url: string; html: string }): Promise<Link> {
+  async createLink(_: { title: string; url: string; html: string; ai_prompt_addition?: string }): Promise<Link> {
     return throwError('createLink not implemented');
   }
-  async updateLink(_: { linkId: number; title: string; url: string }): Promise<Link> {
+  async updateLink(_: { linkId: number; title: string; url: string; ai_prompt_addition?: string }): Promise<Link> {
     return throwError('updateLink not implemented');
   }
   async deleteLink(linkId: number): Promise<void> {

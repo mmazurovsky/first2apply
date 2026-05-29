@@ -97,6 +97,9 @@ export interface First2ApplyApiSdk {
   /** Change the status of all jobs from one status to another */
   changeAllJobsStatus(_: { from: JobStatus; to: JobStatus }): Promise<void>;
 
+  /** Re-run advanced matching against all jobs currently in "new" status, or only the provided jobIds when set. */
+  rerunAdvancedMatching(args?: { jobIds?: number[] }): Promise<{ processed: number; excluded: number }>;
+
   /** Scan a job to fetch its details */
   scanJob(job: Job): Promise<Job>;
 
@@ -114,10 +117,11 @@ export interface First2ApplyApiSdk {
     html: string;
     webPageRuntimeData: WebPageRuntimeData;
     force: boolean;
+    ai_prompt_addition?: string;
   }): Promise<Link>;
 
   /** Update an existing link */
-  updateLink(_: { linkId: number; title: string; url: string }): Promise<Link>;
+  updateLink(_: { linkId: number; title: string; url: string; ai_prompt_addition?: string }): Promise<Link>;
 
   /** Delete a link */
   deleteLink(linkId: number): Promise<void>;
