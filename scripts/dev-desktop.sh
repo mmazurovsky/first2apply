@@ -16,6 +16,8 @@ FUNCTIONS_PID=""
 cleanup() {
   echo ""
   echo "[dev-desktop] shutting down..."
+  # snapshot the DB while supabase containers are still up (left running below)
+  "$ROOT_DIR/scripts/backup-db.sh" || true
   if [[ -n "$FUNCTIONS_PID" ]] && kill -0 "$FUNCTIONS_PID" 2>/dev/null; then
     kill "$FUNCTIONS_PID" 2>/dev/null || true
     wait "$FUNCTIONS_PID" 2>/dev/null || true

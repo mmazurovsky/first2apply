@@ -3,6 +3,18 @@ import { ENV } from '../env';
 import { Logger as MezmoLogger, createLogger } from '@logdna/logger';
 import { app } from 'electron';
 
+// In dev, the terminal/pipe consuming the Electron process stdout can close
+// (e.g. electron-forge's webpack logger restarts) while the app keeps writing
+// log lines. The resulting EPIPE is emitted on the stream with no listener,
+// which Node escalates to an uncaught exception that crashes the app. Swallow
+// broken-pipe errors on the std streams so logging can never take the app down.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE') return;
+    throw err;
+  });
+}
+
 export interface ILogger {
   debug(message: string, data?: Record<string, any>): void;
   info(message: string, data?: Record<string, any>): void;

@@ -5,7 +5,7 @@
   "scripts": {
     "typecheck": "cd supabase/functions && deno check **/*.ts",
     "build": "cd supabase/functions && deno check **/*.ts",
-    "stop": "npx supabase stop",
+    "stop": "(bash ../../scripts/backup-db.sh || true) && npx supabase stop",
     "start": "npx supabase start",
     "db:bootstrap": "bash scripts/db-bootstrap.sh",
     "dev:local": "npx supabase functions serve",

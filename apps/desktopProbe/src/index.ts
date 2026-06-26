@@ -5,8 +5,12 @@ import { F2aSupabaseApi } from '@first2apply/ui';
 import { createClient } from '@supabase/supabase-js';
 import { BrowserWindow, Notification, app, dialog, nativeTheme, safeStorage, shell } from 'electron';
 import Storage from 'electron-store';
+import { execFile } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 import { AmplitudeAnalyticsClient } from './server/amplitude';
 import { F2aAutoUpdater } from './server/autoUpdater';
@@ -326,12 +330,40 @@ async function bootstrap() {
 }
 
 /**
+ * Snapshot the local Supabase DB before quitting (local dev only).
+ *
+ * Only runs when pointed at a local Supabase (localhost/127.0.0.1) — production
+ * uses remote Supabase with no local Docker. Delegates to scripts/backup-db.sh
+ * (rotation/dump live there). Never throws: a failed backup must not block quit.
+ *
+ * Caveat: on macOS `before-quit` hides to tray instead of quitting, so this only
+ * fires on a real Quit (Cmd+Q / tray Quit). The dev-desktop.sh + `pnpm stop`
+ * shell hooks cover window-close / Ctrl+C.
+ */
+async function backupLocalDbBeforeQuit() {
+  const url = ENV.supabase.url ?? '';
+  if (!url.includes('localhost') && !url.includes('127.0.0.1')) return;
+
+  try {
+    // dev cwd is apps/desktopProbe (electron-forge start) -> repo root is two up
+    const script = path.resolve(process.cwd(), '../../scripts/backup-db.sh');
+    if (!fs.existsSync(script)) return;
+    await execFileAsync('bash', [script], { timeout: 15000 });
+    logger.info('backed up local db before quit');
+  } catch (error) {
+    logger.error(`local db backup before quit failed: ${getExceptionMessage(error)}`);
+  }
+}
+
+/**
  * Method used to quit the app.
  */
 async function quit() {
   try {
     logger.info(`quitting...`);
     appIsRunning = false;
+
+    await backupLocalDbBeforeQuit();
 
     jobScanner?.close();
     logger.info(`closed job scanner`);
