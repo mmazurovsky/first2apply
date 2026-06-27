@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { ILogger } from './logger.ts';
 import { buildOpenAiClient, logAiUsage } from './openAI.ts';
-import { extractAndSaveSkillsNote } from './skillsExtraction.ts';
+import { deleteSkillsNote, extractAndSaveSkillsNote } from './skillsExtraction.ts';
 import { checkUserSubscription } from './subscription.ts';
 
 /**
@@ -90,7 +90,30 @@ export async function applyAdvancedMatchingFilters({
     }
 
     // job passed the LLM filter — enrich it with a skills note (best-effort)
-    await extractAndSaveSkillsNote({ logger, supabaseAdminClient, job });
+    const noteText = await extractAndSaveSkillsNote({ logger, supabaseAdminClient, job });
+
+    // second pass: re-filter against the generated summary using the same full
+    // prompt (general + per-link rules). keeps the job only if it also passes.
+    if (noteText) {
+      logger.info(`re-filtering job ${job.id} against its generated summary ...`);
+      const { exclusionDecision: summaryDecision } = await promptOpenAI({
+        prompt: fullPrompt,
+        job,
+        summary: noteText,
+        logger,
+        supabaseAdminClient,
+      });
+
+      if (summaryDecision.excluded) {
+        logger.info(`job ${job.id} excluded by summary filter: ${summaryDecision.reason}`);
+        // drop the auto-note since the job won't appear in the feed
+        await deleteSkillsNote({ supabaseAdminClient, jobId: job.id });
+        return {
+          newStatus: 'excluded_by_advanced_matching',
+          excludeReason: summaryDecision.reason ?? undefined,
+        };
+      }
+    }
   }
 
   logger.info('job passed all advanced matching filters');
@@ -119,12 +142,13 @@ export function isExcludedCompany({
 async function promptOpenAI({
   prompt,
   job,
-
+  summary,
   logger,
   supabaseAdminClient,
 }: {
   job: Job;
   prompt: string;
+  summary?: string;
   logger: ILogger;
   supabaseAdminClient: SupabaseClient<DbSchema, 'public'>;
 }) {
@@ -142,6 +166,7 @@ async function promptOpenAI({
         content: generateUserPrompt({
           prompt,
           job,
+          summary,
         }),
       },
     ],
@@ -174,7 +199,15 @@ async function promptOpenAI({
 /**
  * Generate the user prompt for the OpenAI API.
  */
-function generateUserPrompt({ prompt, job }: { prompt: string; job: Job }) {
+function generateUserPrompt({
+  prompt,
+  job,
+  summary,
+}: {
+  prompt: string;
+  job: Job;
+  summary?: string;
+}) {
   // - Exclude jobs with the title "Senior" or "Lead".
   // - I'm from the UK, so only want jobs that allow working remotely from the UK.
   // - Do not include jobs that require working with Python or Java.
@@ -182,6 +215,22 @@ function generateUserPrompt({ prompt, job }: { prompt: string; job: Job }) {
   // - Salary should be at least $80,000 per year.
   // - I'm from the UK, so only want jobs that allow working remotely from the UK.
   // - Exclude jobs with the title "Senior" or "Lead".
+
+  // second pass: judge against the distilled skills/requirements summary
+  if (summary) {
+    return `Here are my requirements for job filtering:
+${prompt}
+
+Job Title: ${job.title}
+Location: ${job.location ?? 'Not specified'}
+Tags: ${job?.tags?.join(', ') ?? 'None'}
+
+Below is an extracted summary of the key skills and explicit requirements for this job (not the full description):
+${summary}
+
+Based on my requirements, should this job be excluded from my feed?`;
+  }
+
   return `Here are my requirements for job filtering:
 ${prompt}
 

@@ -13,8 +13,32 @@ const SkillsFormat = z.object({
 });
 
 /**
+ * Delete any auto-generated skills note for a job (matched by marker; user's
+ * manual notes are left untouched).
+ */
+export async function deleteSkillsNote({
+  supabaseAdminClient,
+  jobId,
+}: {
+  supabaseAdminClient: SupabaseClient<DbSchema, 'public'>;
+  jobId: number;
+}): Promise<void> {
+  const { error } = await supabaseAdminClient
+    .from('notes')
+    .delete()
+    .eq('job_id', jobId)
+    .ilike('text', `${SKILLS_NOTE_MARKER}%`);
+  if (error) {
+    throw error;
+  }
+}
+
+/**
  * Extract tech skills, software skills and explicit requirements from a job
  * description via a second LLM request and save them as a note on the job.
+ *
+ * Returns the saved note text, or null when no note was created (no
+ * description, no skills extracted, or a swallowed error).
  *
  * Best-effort: any failure is logged and swallowed so it never flips a kept
  * job's status or fails the scan/rerun. Skips jobs that already have an
@@ -28,22 +52,14 @@ export async function extractAndSaveSkillsNote({
   logger: ILogger;
   supabaseAdminClient: SupabaseClient<DbSchema, 'public'>;
   job: Job;
-}): Promise<void> {
+}): Promise<string | null> {
   try {
     if (!job.description) {
-      return;
+      return null;
     }
 
     // delete any existing auto-generated skills note so a rerun refreshes it
-    // (matched by marker; user's manual notes untouched)
-    const { error: delErr } = await supabaseAdminClient
-      .from('notes')
-      .delete()
-      .eq('job_id', job.id)
-      .ilike('text', `${SKILLS_NOTE_MARKER}%`);
-    if (delErr) {
-      throw delErr;
-    }
+    await deleteSkillsNote({ supabaseAdminClient, jobId: job.id });
 
     logger.info(`extracting skills from job ${job.id} description ...`);
     const { llmConfig, openAi } = buildOpenAiClient();
@@ -78,7 +94,7 @@ export async function extractAndSaveSkillsNote({
     const text = formatSkillsNote(skills);
     if (!text) {
       logger.info(`no skills extracted for job ${job.id}, skipping note`);
-      return;
+      return null;
     }
 
     const { error: insertErr } = await supabaseAdminClient.from('notes').insert({
@@ -92,8 +108,10 @@ export async function extractAndSaveSkillsNote({
     }
 
     logger.info(`saved skills note for job ${job.id}`);
+    return text;
   } catch (error) {
     logger.error(`failed to extract skills for job ${job.id}: ${getExceptionMessage(error)}`);
+    return null;
   }
 }
 
