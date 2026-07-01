@@ -70,13 +70,15 @@ export async function extractAndSaveSkillsNote({
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: generateUserPrompt({ job }) },
       ],
-      max_completion_tokens: 1500,
+      max_completion_tokens: 4000,
       response_format: { type: 'json_object' },
     });
 
     const choice = response.choices[0];
     if (choice.finish_reason !== 'stop') {
-      throw new Error(`OpenAI response did not finish: ${choice.finish_reason}`);
+      throw new Error(
+        `skills extraction truncated (finish_reason=${choice.finish_reason}); raise max_completion_tokens`,
+      );
     }
     const skills = SkillsFormat.parse(
       JSON.parse(choice.message.content ?? throwError('missing content')),
