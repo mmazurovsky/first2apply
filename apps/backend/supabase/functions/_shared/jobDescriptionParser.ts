@@ -28,7 +28,12 @@ const SITE_PROVIDER_QUERY_SELECTORS: Record<SiteProvider, SiteProviderQuerySelec
     ],
   },
   [SiteProvider.indeed]: {
-    description: ['#JobDescriptionUpdatesText', '#jobDescriptionText', 'p.error-description'],
+    description: [
+      '#JobDescriptionUpdatesText',
+      '#jobDescriptionText',
+      '.simple-job-description-html',
+      'p.error-description',
+    ],
   },
   [SiteProvider.remoteok]: {
     description: ['.description'],
