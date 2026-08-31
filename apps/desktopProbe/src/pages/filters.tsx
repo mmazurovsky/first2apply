@@ -7,7 +7,7 @@ import { FiltersSkeleton } from '@/components/skeletons/filtersSkeleton';
 import { useError } from '@/hooks/error';
 import { useSession } from '@/hooks/session';
 import { getAdvancedMatchingConfig, openExternalUrl, updateAdvancedMatchingConfig } from '@/lib/electronMainSdk';
-import { StripeBillingPlan, SubscriptionTier } from '@first2apply/core';
+import { DedupMode, StripeBillingPlan, SubscriptionTier } from '@first2apply/core';
 import { Alert, AlertDescription, AlertTitle } from '@first2apply/ui';
 import {
   AlertDialog,
@@ -19,6 +19,7 @@ import {
 import { Badge } from '@first2apply/ui';
 import { Button } from '@first2apply/ui';
 import { Input } from '@first2apply/ui';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@first2apply/ui';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@first2apply/ui';
 import { useToast } from '@first2apply/ui';
 
@@ -34,6 +35,7 @@ export function FiltersPage() {
   const [addBlacklistedCompany, setAddBlacklistedCompany] = useState<string>('');
   const [isSubscriptionDialogOpen, setSubscriptionDialogOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [dedupMode, setDedupMode] = useState<DedupMode>('company_title');
   const [showAllBlacklistedCompanies, setShowAllBlacklistedCompanies] = useState(false);
 
   /**
@@ -46,6 +48,7 @@ export function FiltersPage() {
         if (config) {
           setUserAiInput(config.chatgpt_prompt);
           setBlacklistedCompanies(config.blacklisted_companies);
+          setDedupMode(config.dedup_mode ?? 'company_title');
         }
       } catch (error) {
         handleError({ error, title: 'Failed to load advanced matching filters' });
@@ -64,9 +67,11 @@ export function FiltersPage() {
       const updatedConfig = await updateAdvancedMatchingConfig({
         chatgpt_prompt: userAiInput,
         blacklisted_companies: blacklistedCompanies,
+        dedup_mode: dedupMode,
       });
       setUserAiInput(updatedConfig.chatgpt_prompt);
       setBlacklistedCompanies(updatedConfig.blacklisted_companies);
+      setDedupMode(updatedConfig.dedup_mode ?? 'company_title');
 
       toast({ title: 'Advanced matching filters saved' });
     } catch (error) {
@@ -149,6 +154,36 @@ export function FiltersPage() {
           <AlertDescription className="text-sm text-muted-foreground">
             Pro Tips: Exclude skills you don’t want, specify salary expectations, define experience levels, select job
             specifics like remote work or PTO preferences and more.
+          </AlertDescription>
+        </Alert>
+      </section>
+
+      {/* HERE STARTS THE DUPLICATE DETECTION */}
+
+      <section>
+        <p className="mb-4 text-lg">
+          <span className="font-medium">Skip duplicates</span> so a job you’ve already seen never comes back. Job boards
+          give the same role a <span className="font-medium">new ID</span> every time it’s reposted, and one per city:
+        </p>
+
+        <Select value={dedupMode} onValueChange={(value) => setDedupMode(value as DedupMode)}>
+          <SelectTrigger className="w-full bg-card px-6 text-base md:w-[420px]">
+            <SelectValue placeholder="Select duplicate detection" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="company_title">Same company and job title</SelectItem>
+            <SelectItem value="company_title_location">Same company, title and location</SelectItem>
+            <SelectItem value="off">Off — show every posting</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Alert className="mt-2 flex items-center gap-2 border-0 p-0">
+          <AlertTitle className="mb-0">
+            <InfoCircledIcon className="h-4 w-4 text-muted-foreground" />
+          </AlertTitle>
+          <AlertDescription className="text-sm text-muted-foreground">
+            Including location keeps a role that’s posted separately in 20 cities as 20 separate jobs. Duplicates are
+            skipped before they cost you an AI credit.
           </AlertDescription>
         </Alert>
       </section>

@@ -3,6 +3,7 @@ import { getExceptionMessage } from '@first2apply/core';
 
 import { CORS_HEADERS } from '../_shared/cors.ts';
 import { EdgeFunctionAuthorizedContext, getEdgeFunctionContext } from '../_shared/edgeFunctions.ts';
+import { insertJobsDeduped } from '../_shared/jobDedup.ts';
 import { parseJobsListUrl } from '../_shared/jobListParser.ts';
 import { createLoggerWithMeta } from '../_shared/logger.ts';
 import { checkUserSubscription } from '../_shared/subscription.ts';
@@ -84,21 +85,14 @@ Deno.serve(async (req) => {
         }),
       ).then((r) => r.flat());
 
-      const { data: upsertedJobs, error: insertError } = await supabaseClient
-        .from('jobs')
-        .upsert(
-          parsedJobs.map((job) => ({
-            ...job,
-            status: 'processing' as const,
-            // ensure tags is not null
-            tags: job.tags ?? [],
-          })),
-          { onConflict: 'user_id, externalId', ignoreDuplicates: true },
-        )
-        .select('*');
-      if (insertError) throw new Error(insertError.message);
-
-      const newJobs = upsertedJobs?.filter((job) => job.status === 'processing') ?? [];
+      // dedupes on a content fingerprint before inserting, so a repost or a
+      // multi-city clone of a job the user has already seen never reaches the
+      // description scrape or the LLM filter
+      const newJobs = await insertJobsDeduped({
+        supabaseClient,
+        jobs: parsedJobs,
+        logger,
+      });
       logger.info(`found ${newJobs.length} new jobs`);
 
       return { newJobs, parseFailed };

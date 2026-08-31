@@ -8,6 +8,12 @@ import { json2csv } from 'json-2-csv';
 import os from 'os';
 import { promisify } from 'util';
 
+import { IAnalyticsClient } from '../lib/analytics';
+import { F2aAutoUpdater } from './autoUpdater';
+import { JobScanner } from './jobScanner';
+import { OverlayBrowserView } from './overlayBrowserView';
+import { getStripeConfig } from './stripeConfig';
+
 const execFileAsync = promisify(execFile);
 
 async function _openInChrome(url: string): Promise<void> {
@@ -55,12 +61,6 @@ async function _openInChrome(url: string): Promise<void> {
     await shell.openExternal(url);
   }
 }
-
-import { IAnalyticsClient } from '../lib/analytics';
-import { F2aAutoUpdater } from './autoUpdater';
-import { JobScanner } from './jobScanner';
-import { OverlayBrowserView } from './overlayBrowserView';
-import { getStripeConfig } from './stripeConfig';
 
 /**
  * Helper methods used to centralize error handling.
@@ -139,7 +139,7 @@ export function initRendererIpcApi({
       });
 
       // intentionally not awaited to not have the user wait until JDs are in
-      jobScanner.scanJobs(newJobs).catch((error) => {
+      jobScanner.scanJobs(newJobs, { mode: 'pipeline' }).catch((error) => {
         console.error(getExceptionMessage(error));
       });
 
@@ -196,7 +196,9 @@ export function initRendererIpcApi({
 
   ipcMain.handle('scan-job-description', async (event, { job }) =>
     _apiCall(async () => {
-      const [updatedJob] = await jobScanner.scanJobs([job]);
+      // the user opened a job whose description was never fetched; fill in the
+      // content only - this job has already been categorized
+      const [updatedJob] = await jobScanner.scanJobs([job], { mode: 'refresh' });
       return { job: updatedJob };
     }),
   );

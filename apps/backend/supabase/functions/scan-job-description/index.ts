@@ -28,9 +28,14 @@ Deno.serve(async (req) => {
       html: string;
       maxRetries?: number;
       retryCount?: number;
+      // 'pipeline' is the batch scan: it categorizes the job exactly once.
+      // 'refresh' is the user opening a job that has no description yet: it
+      // only fills in content and must never re-categorize or reorder the job.
+      mode?: 'pipeline' | 'refresh';
     } = await req.json();
     const { jobId, html, maxRetries, retryCount } = body;
-    logger.info(`processing job description for ${jobId}  ...`);
+    const mode = body.mode ?? 'pipeline';
+    logger.info(`processing job description for ${jobId} (mode: ${mode}) ...`);
 
     // find the job and its site
     const { data: job, error: findJobErr } = await supabaseClient.from('jobs').select('*').eq('id', jobId).single();
@@ -51,7 +56,7 @@ Deno.serve(async (req) => {
     }
 
     const parseDescriptionAndSaveUpdates = async () => {
-      let updatedJob: Job = { ...job, status: 'new' };
+      let updatedJob: Job = { ...job };
 
       // parse the job description
       logger.info(`[${site.provider}] parsing job description for ${jobId} ...`);
@@ -88,9 +93,35 @@ Deno.serve(async (req) => {
         });
       }
 
+      if (!updatedJob.description) {
+        // use original description to avoid empty descriptions
+        updatedJob.description = job.description;
+      }
+
+      if (mode === 'refresh') {
+        // The job has already been categorized. Fill in the content the user
+        // came to read and nothing else - no status, no updated_at (which would
+        // teleport the job to the top of its tab), and no advanced matching
+        // (which would burn tokens and could silently re-exclude a job the user
+        // is actively reading).
+        const { error: refreshJobErr } = await supabaseClient
+          .from('jobs')
+          .update({
+            description: updatedJob.description,
+            salary: updatedJob.salary,
+            tags: updatedJob.tags,
+          })
+          .eq('id', jobId);
+        if (refreshJobErr) {
+          throw refreshJobErr;
+        }
+
+        return { updatedJob, parseFailed: !updatedJob.description };
+      }
+
       const { newStatus, excludeReason } = await applyAdvancedMatchingFilters({
         logger,
-        job: updatedJob,
+        job: { ...updatedJob, status: 'new' },
         supabaseClient,
         supabaseAdminClient,
       });
@@ -101,13 +132,12 @@ Deno.serve(async (req) => {
         exclude_reason: excludeReason,
       };
 
-      if (!updatedJob.description) {
-        // use original description to avoid empty descriptions
-        updatedJob.description = job.description;
-      }
-
       logger.info(`[${site.provider}] ${updatedJob.status} ${job.title}`);
 
+      // Exactly-once: only a row still awaiting categorization matches. A job
+      // that already left 'processing' (or that a racing worker already
+      // stamped) matches zero rows and is left completely untouched - no status
+      // change, no updated_at bump, no reordering of the New tab.
       const { error: updateJobErr } = await supabaseClient
         .from('jobs')
         .update({
@@ -116,14 +146,12 @@ Deno.serve(async (req) => {
           tags: updatedJob.tags,
           status: updatedJob.status,
           updated_at: new Date(),
+          processed_at: new Date(),
           exclude_reason: updatedJob.exclude_reason,
         })
         .eq('id', jobId)
-
-        // I think this is causing jobs to be put back on new from deleted
-        // if the app fails to process an entire batch in one cron interval
-        // then the same job will be processed twice (since it's status is processing still)
-        .in('status', ['processing', 'new']);
+        .eq('status', 'processing')
+        .is('processed_at', null);
       if (updateJobErr) {
         throw updateJobErr;
       }

@@ -191,12 +191,11 @@ export class JobScanner {
 
       // scan job descriptions for all pending jobs
       if (!this._isRunning) return;
-      const { jobs } = await this._supabaseApi.listJobs({
-        status: 'processing',
-        limit: 300,
-      });
-      this._logger.info(`found ${jobs.length} jobs that need processing`);
-      const scannedJobs = await this.scanJobs(jobs);
+      // claims the rows, so a job still being worked on by a previous tick is
+      // not picked up again and re-categorized
+      const jobs = await this._supabaseApi.claimJobsForProcessing({ limit: 300 });
+      this._logger.info(`claimed ${jobs.length} jobs that need processing`);
+      const scannedJobs = await this.scanJobs(jobs, { mode: 'pipeline' });
       const newJobs = scannedJobs.filter((job) => job.status === 'new');
 
       // run post scan hook
@@ -231,8 +230,8 @@ export class JobScanner {
   /**
    * Scan a list of new jobs to extract the description.
    */
-  async scanJobs(jobs: Job[]): Promise<Job[]> {
-    this._logger.info(`scanning ${jobs.length} jobs descriptions...`);
+  async scanJobs(jobs: Job[], { mode = 'pipeline' }: { mode?: 'pipeline' | 'refresh' } = {}): Promise<Job[]> {
+    this._logger.info(`scanning ${jobs.length} jobs descriptions (mode: ${mode})...`);
 
     // figure out which jobs can be scanned in incognito mode
     const sites = await this._supabaseApi.listSites();
@@ -270,6 +269,7 @@ export class JobScanner {
                     html,
                     maxRetries,
                     retryCount,
+                    mode,
                   });
 
                   if (parseFailed) {

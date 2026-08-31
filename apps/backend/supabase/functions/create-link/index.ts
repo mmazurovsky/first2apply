@@ -4,6 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
 
 import { CORS_HEADERS } from '../_shared/cors.ts';
 import { getEdgeFunctionContext } from '../_shared/edgeFunctions.ts';
+import { insertJobsDeduped } from '../_shared/jobDedup.ts';
 import { cleanJobUrl, parseJobsListUrl } from '../_shared/jobListParser.ts';
 import { createLoggerWithMeta } from '../_shared/logger.ts';
 import { checkUserSubscription } from '../_shared/subscription.ts';
@@ -140,24 +141,11 @@ Deno.serve(async (req) => {
         job.link_id = link.id;
       });
 
-      const { data: upsertedJobs, error: insertError } = await supabaseClient
-        .from('jobs')
-        .upsert(
-          jobs.map((job) => ({
-            ...job,
-            status: 'processing' as const,
-
-            // make sure tags is not null
-            tags: job.tags || [],
-          })),
-          { onConflict: 'user_id, externalId', ignoreDuplicates: true },
-        )
-        .select('*');
-      if (insertError) throw new Error(insertError.message);
-
-      logger.info(`upserted ${upsertedJobs?.length} jobs for link ${link.id}`);
-      newJobs = upsertedJobs?.filter((job) => job.status === 'processing') ?? [];
-      logger.info(`found ${newJobs.length} new jobs`);
+      // dedupes on a content fingerprint before inserting, so a repost or a
+      // multi-city clone of a job the user has already seen never reaches the
+      // description scrape or the LLM filter
+      newJobs = await insertJobsDeduped({ supabaseClient, jobs, logger });
+      logger.info(`found ${newJobs.length} new jobs for link ${link.id}`);
     }
 
     logger.info(`successfully created link: ${link.id}`);

@@ -95,6 +95,14 @@ export type Job = {
   link_id?: number;
 
   exclude_reason?: string;
+
+  // set once the job has been categorized, so it is never processed twice
+  processed_at?: Date;
+  // set when a worker claims the job for description scanning
+  processing_started_at?: Date;
+  // content fingerprints; maintained by trigger_update_job_dedup_keys
+  dedup_key?: string;
+  dedup_key_loc?: string;
 };
 
 export type Review = {
@@ -146,6 +154,12 @@ export type StripeConfig = {
   plans: StripeBillingPlan[];
 };
 
+/**
+ * How aggressively a newly scraped job is matched against ones already seen.
+ * 'company_title' also collapses the same role posted once per city.
+ */
+export type DedupMode = 'off' | 'company_title' | 'company_title_location';
+
 export type AdvancedMatchingConfig = {
   id: number;
   user_id: string;
@@ -154,6 +168,7 @@ export type AdvancedMatchingConfig = {
   ai_api_cost: number;
   ai_api_input_tokens_used: number;
   ai_api_output_tokens_used: number;
+  dedup_mode: DedupMode;
 };
 
 export type WebPageRuntimeData = Partial<Record<SiteProvider, ProviderRuntimeData>>;
@@ -206,7 +221,13 @@ export type DbSchema = {
           | 'status'
           | 'link_id'
         >;
-        Update: Pick<Job, 'status'> | Pick<Job, 'description'> | Pick<Job, 'labels'>;
+        Update:
+          | Pick<Job, 'status'>
+          | Pick<Job, 'description'>
+          | Pick<Job, 'labels'>
+          | Partial<
+              Pick<Job, 'description' | 'salary' | 'tags' | 'status' | 'updated_at' | 'processed_at' | 'exclude_reason'>
+            >;
         Relationships: [];
       };
       reviews: {
@@ -238,8 +259,9 @@ export type DbSchema = {
       };
       advanced_matching: {
         Row: AdvancedMatchingConfig;
-        Insert: Pick<AdvancedMatchingConfig, 'blacklisted_companies' | 'chatgpt_prompt'>;
-        Update: Partial<Pick<AdvancedMatchingConfig, 'blacklisted_companies' | 'chatgpt_prompt'>>;
+        Insert: Pick<AdvancedMatchingConfig, 'blacklisted_companies' | 'chatgpt_prompt'> &
+          Partial<Pick<AdvancedMatchingConfig, 'dedup_mode'>>;
+        Update: Partial<Pick<AdvancedMatchingConfig, 'blacklisted_companies' | 'chatgpt_prompt' | 'dedup_mode'>>;
         Relationships: [];
       };
     };
@@ -269,6 +291,16 @@ export type DbSchema = {
           status: JobStatus;
           job_count: number;
         }>;
+      };
+      insert_jobs_deduped: {
+        Params: { p_jobs: unknown };
+        Args: {};
+        Returns: Job[];
+      };
+      claim_jobs_for_processing: {
+        Params: { p_limit?: number; p_stale_after?: string };
+        Args: {};
+        Returns: Job[];
       };
       get_user_id_by_email: {
         Params: { email: string };

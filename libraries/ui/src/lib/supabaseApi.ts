@@ -215,11 +215,15 @@ export class F2aSupabaseApi {
     html,
     maxRetries,
     retryCount,
+    mode = "pipeline",
   }: {
     jobId: number
     html: string
     maxRetries: number
     retryCount: number
+    // "pipeline" categorizes the job exactly once; "refresh" only fills in
+    // content for a job the user opened, leaving its status and position alone
+    mode?: "pipeline" | "refresh"
   }) {
     return this._supabaseApiCall(() =>
       this._supabase.functions.invoke<{ job: Job; parseFailed: boolean }>(
@@ -230,6 +234,7 @@ export class F2aSupabaseApi {
             html,
             maxRetries,
             retryCount,
+            mode,
           },
         }
       )
@@ -328,6 +333,31 @@ export class F2aSupabaseApi {
       filtered: countersMap.get("excluded_by_advanced_matching") ?? 0,
       nextPageToken,
     }
+  }
+
+  /**
+   * Atomically claim jobs awaiting description scanning.
+   *
+   * Replaces listJobs({ status: "processing" }), which handed the same
+   * leftovers to every cron tick and let two workers race on one row. Jobs
+   * claimed less than `staleAfter` ago are treated as still in flight.
+   */
+  async claimJobsForProcessing({
+    limit = 300,
+    staleAfter = "15 minutes",
+  }: {
+    limit?: number
+    staleAfter?: string
+  } = {}): Promise<Job[]> {
+    const jobs = await this._supabaseApiCall(
+      async () =>
+        await this._supabase.rpc("claim_jobs_for_processing", {
+          p_limit: limit,
+          p_stale_after: staleAfter,
+        })
+    )
+
+    return jobs ?? []
   }
 
   /**
@@ -643,7 +673,8 @@ export class F2aSupabaseApi {
     config: Pick<
       AdvancedMatchingConfig,
       "chatgpt_prompt" | "blacklisted_companies"
-    >
+    > &
+      Partial<Pick<AdvancedMatchingConfig, "dedup_mode">>
   ) {
     const [updatedConfig] = await this._supabaseApiCall(
       async () =>

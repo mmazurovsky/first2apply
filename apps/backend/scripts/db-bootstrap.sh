@@ -5,6 +5,12 @@
 # Applies schema from supabase/seed.sql (via `supabase db reset`) and
 # populates the public.sites catalog from supabase/sites_rows.csv.
 #
+# seed.sql is the schema source of truth. Incremental changes to an EXISTING
+# database (local or prod) ship as one-shot idempotent scripts in supabase/sql/,
+# applied with psql -v ON_ERROR_STOP=1 -f <file>. Every such change must also be
+# folded into seed.sql -- the backups in scripts/backup-db.sh are data-only, so
+# a column that exists live but not in seed.sql breaks restore.
+#
 # Safe to re-run: if public.sites already has rows, exits without changes.
 #
 # WARNING: when sites is empty, this runs `supabase db reset`, which WIPES

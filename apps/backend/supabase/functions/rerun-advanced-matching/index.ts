@@ -40,11 +40,7 @@ Deno.serve(async (req) => {
     }
     const jobIdsFilter = Array.isArray(body.jobIds) ? body.jobIds : undefined;
 
-    let jobsQuery = supabaseClient
-      .from('jobs')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('status', 'new');
+    let jobsQuery = supabaseClient.from('jobs').select('*').eq('user_id', user.id).eq('status', 'new');
     if (jobIdsFilter && jobIdsFilter.length > 0) {
       jobsQuery = jobsQuery.in('id', jobIdsFilter);
     }
@@ -86,6 +82,7 @@ Deno.serve(async (req) => {
               status: res.newStatus,
               exclude_reason: res.excludeReason ?? null,
               updated_at: new Date(),
+              processed_at: new Date(),
             })
             .eq('id', res.job.id)
             .eq('status', 'new');
